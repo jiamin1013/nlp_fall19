@@ -108,13 +108,11 @@ def main():
         # log base e to log base 2 at print time, by dividing by log(2).
 
         log.info("Printing file log-likelihoods.")
-        total_log_prob_tar,total_log_prob_ntar,tar_counts = 0.0,0
+        total_log_prob,tar_counts = 0.0,0
         tar_name,ntar_name = args.train_file[0].name,args.train_file[1].name
         for test_file in args.test_files:
             log_prob_tar = lm1.file_log_prob(test_file) / np.log(2) + log_prior_tar
-            total_log_prob_tar += log_prob_tar
             log_prob_ntar = lm2.file_log_prob(test_file) / np.log(2) + log_prior_ntar
-            total_log_prob_ntar += log_prob_ntar
             if log_prob_tar > log_prob_ntar:
                 tar_counts+=1
                 print("{0}\t{1}".format(tar_name,test_file))
@@ -123,11 +121,6 @@ def main():
         ll = len(args.test_files)
         print("{0} files were probably {1} ({2:.2f}%)".format(tar_counts,tar_name,tar_counts/ll*100))
         print("{0} files were probably {1} ({2:.2f}%)".format(ll-tar_counts,ntar_name,(ll-tar_counts)/ll*100))
-
-        token1=sum(lm1.num_token(args.test_files[0]))
-        token2=sum(lm1.num_token(args.test_files[1]))
-        print(f"Overall cross-entropy estimating from target model:\t{-total_log_prob / total_tokens:.5f}")
-
 
         #total_tokens = sum(lm.num_tokens(test_file) for test_file in args.test_files)
         #print(f"Overall cross-entropy:\t{-total_log_prob / total_tokens:.5f}")

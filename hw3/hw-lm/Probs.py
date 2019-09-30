@@ -271,13 +271,21 @@ class BackoffAddLambdaLanguageModel(LanguageModel):
 
     def prob(self, x: str, y: str, z: str) -> float:
         # TODO: Reimplement me!
-        return super().prob(x, y, z)
+        #The trigram should backoff to bigram, bigram to unigram
+        #unigram to uniform
+        assert self.vocab is not None
+        x = self.replace_missing(x)
+        y = self.replace_missing(y)
+        z = self.replace_missing(z)
+        uni=(self.tokens[z,]+self.lambda_)/(self.tokens[()]+self.lambda_*self.vocab_size)
+        bi=(self.tokens[y,z]+self.lambda_*self.vocab_size*uni)/(self.tokens[y,]+self.lambda_*self.vocab_size)
+        tri=(self.tokens[x,y,z]+self.lambda_*self.vocab_size*bi)/(self.tokens[x,y]+self.lambda_*self.vocab_size)
+        return tri
 
 
 class LogLinearLanguageModel(LanguageModel):
     def __init__(self, c: float, lexicon: Path) -> None:
         super().__init__()
-
         if c < 0:
             log.error(f"C value was {c}")
             raise ValueError("You must include a non-negative c value in smoother name")
@@ -314,6 +322,14 @@ class LogLinearLanguageModel(LanguageModel):
 
     def prob(self, x: str, y: str, z: str) -> float:
         # TODO: Reimplement me!
+        assert self.vocab is not None
+        x=self.replace_missing(x)
+        y=self.replace_missing(y)
+        z=self.replace_missing(z)
+
+        numerator=np.exp()
+
+
         return super().prob(x, y, z)
 
     def train(self, corpus: Path) -> List[str]:

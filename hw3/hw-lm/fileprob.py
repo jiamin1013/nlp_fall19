@@ -86,10 +86,10 @@ def main():
         lm = LanguageModel.make(args.smoother, args.lexicon)
 
         lm.train(args.train_file)
-        lm.save(destination="result"/model_path)
+        lm.save(destination=model_path)
     elif args.mode == TEST:
         log.info("Testing...")
-        lm = LanguageModel.load("result"/model_path)
+        lm = LanguageModel.load(model_path)
         # We use natural log for our internal computations and that's
         # the kind of log-probability that fileLogProb returns.
         # But we'd like to print a value in bits: so we convert
@@ -99,11 +99,11 @@ def main():
         total_log_prob = 0.0
         for test_file in args.test_files:
             log_prob = lm.file_log_prob(test_file) / np.log(2)
+            print(f"{log_prob:g}\t{test_file}")
             total_log_prob += log_prob
 
         total_tokens = sum(lm.num_tokens(test_file) for test_file in args.test_files)
-        print("{0:.5f}".format(total_log_prob/total_tokens))
-#        print(f"Overall cross-entropy:\t{-total_log_prob / total_tokens:.5f}")
+        print(f"Overall cross-entropy:\t{-total_log_prob / total_tokens:.5f}")
     else:
         raise ValueError("Inappropriate mode of operation.")
 
