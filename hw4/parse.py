@@ -24,20 +24,14 @@ class treeNode():
     def __init__(self,gram_node):
         self.node = gram_node
         self.children = None
-        self.parents = None
 
     def set_children(self,children):
-        if self.children is None:
-            self.children = [children]
-        else:
-            self.children = self.children.append(children)
+        self.children = children
 
-    def set_parent(self,parent):
-        if self.parents is None:
-            self.parents = [parent]
-        else:
-            self.parents = self.parents.append(parent)
-
+class cell():
+    def __init__(self,treeNodes,best_parse):
+        self.parses = treeNodes
+        self.best_parse = best_parse
 
 def read_grammar(gram):
     grammar = {}
@@ -53,37 +47,48 @@ def read_grammar(gram):
                 grammar[key] = [(parts[0],parts[1])]
     return grammar
 
-
+def printParse(tNode, parse):
+    parse.append(" ({0} ".format(tNode.node.lhs))
+    if tNode.children is not None:
+        cNode = tNode.children
+        parse = printParse(cNode[0],parse)
+        parse = printParse(cNode[1],parse)
+        parse.append(")")
+    else:
+        parse.append("{0})".format(tNode.node.rhs))
+    return parse
 
 def main():
     args = get_args()
     mode,gram,sent = args.mode,args.gram,args.sent
     grammar = read_grammar(gram)
-    recognizer, parse_weight, total_weight = [],[],[]
+    recognizer, best_parse, total_weight = [],[],[]
     with open(sent,'r') as sent_file:
         for line in sent_file:
-            status = "pass"
             words = line.strip().split()
             lw = len(words)
-            table = np.zeros((lw,lw)).tolist()
+            table = np.zeros((lw+1,lw+1)).tolist()
             #loop words along superdiagnal
             for j in range(1,lw+1):
-                word = words[j]
+                word = words[j-1]
                 if (word,None) in grammar.keys():
                     treeNodes = []
                     #store each rule that generates the word; rule[1]=lhs, rule[0]=prob
-                    for rule in grammar[word]:
+                    for rule in grammar[(word,None)]:
                         gram_node = gramNode(rule[1],word,rule[0])
                         new_treeNode = treeNode(gram_node)
                         treeNodes.append(new_treeNode)
                     table[j-1][j] = treeNodes
                 else:
-                    status = "fail"; break;
+                    recognizer.append("False")
+                    best_parse.append("-\tNOPARSE")
+                    total_weight.append("-")
+                    break; #if a terminal non-exsists, no parse exsits, terminate
                 #loop rows at current column
                 for i in range(j-2,-1,-1):
+                    treeNodes = []
                     # loop possible parse positions bw. i+1 and j-1
                     for k in range(i+1,j):
-                        treeNodes = []
                         nT1s,nT2s = table[i][k],table[k][j]
                         for idx1 in range(len(nT1s)):
                             nT1 = nT1s[idx1].node.lhs
@@ -91,18 +96,22 @@ def main():
                                 nT2 = nT2s[idx2].node.lhs
                                 if (nT1,nT2) in grammar.keys():
                                     for rule in grammar[(nT1,nT2)]:
-                                        gram_node = gramNode(rule[1],word,rule[0])
+                                        gram_node = gramNode(rule[1],None,rule[0]) #No need to store rhs, because it's children
                                         new_treeNode = treeNode(gram_node)
                                         new_treeNode.set_children((nT1s[idx1],nT2s[idx2]))
-                                        nT1s[idx1].set_parent(new_treeNode) #TODO: is parent necessary?
-                                        nT2s[idx2].set_parent(new_treeNode)
+                                        #nT1s[idx1].set_parent(new_treeNode) #TODO: is parent necessary?
+                                        #nT2s[idx2].set_parent(new_treeNode)
                                         treeNodes.append(new_treeNode)
                     table[i][j] = treeNodes
+            if table[0][lw] != 0:
+                parse = printParse(table[0][lw][0],[])
+                print("".join(parse).strip())
+            else:
+                print("NOPARSE")
 
-
-
-
-
+def tablePrint(table):
+    for row in table:
+        print(row)
 
 
 
