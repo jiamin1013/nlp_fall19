@@ -24,7 +24,15 @@ class HMM():
         self.tag_dict = {}
         self.tag2int = {}
         self.int2tag = {}
+        self.states = {}
         self.num_states = None
+        #smoothing
+        self.lambda_emis = 0
+        self.lambda_tran = 0
+
+    def set_lambda(self,lambda_emis,lambda_tran=0):
+        self.lambda_emis = lambda_emis
+        self.lambda_tran = lambda_tran
 
     #update parameters from unsmoothed counts from train file 
     def count_estimate(self,train_file):
@@ -53,6 +61,7 @@ class HMM():
                 ptag = tag
         #assigning
         self.num_states = len(states.keys())
+        self.states = states
         #swap "###" and position 0, so that "###" will be mapped to 0
         new_keys = list(states.keys())
         foo,fooidx = new_keys[0],new_keys.index("###")
@@ -63,9 +72,21 @@ class HMM():
         for tran in transition.keys():
             i,j = self.tag2int[tran[0]],self.tag2int[tran[1]]
             denom = states[tran[0]] if i!=0 else states[tran[0]]-1
-            self.ptran[i,j] = np.log(transition[tran])-np.log(denom)
+            #TODO smoothing?
+            numer = transition[tran]
+            self.ptran[i,j] = np.log(numer)-np.log(denom)
+        #smoothing for emis?
+        if self.lambda_emis != 0:
+            self.tag_dict["OOV"] = list(self.tag2int.keys())[1:] #exclude ###
         for emis in emission.keys():
-            self.pemis[emis] = np.log(emission[emis])-np.log(states[emis[1]])
+            numer = emission[emis]+self.lambda_emis
+            denom = states[emis[1]]+self.lambda_emis*(len(self.tag_dict.keys())-1)
+            self.pemis[emis] = np.log(numer) - np.log(denom)
+        for state in states.keys():
+            if state != "###" and self.lambda_emis != 0:
+                numer = emission[emis]+self.lambda_emis
+                denom = states[emis[1]]+self.lambda_emis*(len(self.tag_dict.keys())-1)
+                self.pemis[("OOV",state)] = np.log(numer)-np.log(denom)
         assert(len(self.tag2int.keys())==self.num_states)
 
     #assumes input as one sentence, or a list of words
@@ -76,14 +97,14 @@ class HMM():
         bkptr[:,0] = 0 #starts with ###
         viter = np.full((self.num_states,len(sentence)),np.NINF)
         viter[:,0] = 0 #prob of generating ### is 1, in log domain is 0
-        pretags = ["###"]
-        all_states = list(self.tag2int.keys())
-        all_states.remove('###')
+        #all_states = list(self.tag2int.keys())
+        #all_states.remove('###')
+        pretags, wI = ["###"],"###"
         #algo
         for i in range(1,len(sentence)):
-            wi,wI = sentence[i], sentence[i-1]
             #consider all states if wi is unknown
-            curtags = self.tag_dict[wi] if wi in self.tag_dict.keys() else all_states
+            wi = sentence[i] if sentence[i] in self.tag_dict.keys() else "OOV"
+            curtags = self.tag_dict[wi]
             for tagi in curtags:
                 posi = self.tag2int[tagi]
                 for tagI in pretags:
@@ -93,7 +114,7 @@ class HMM():
                     if vi > viter[posi,i]:
                         viter[posi,i] = vi
                         bkptr[posi,i] = posI
-            pretags = curtags
+            pretags,wI = curtags,wi
         #handle last emission
         nT,best = 0,np.NINF
         for n in range(self.num_states):
@@ -108,16 +129,27 @@ class HMM():
             nT = bkptr[nT,i]
         return best_seq
 
-    def eval_acc(self,seq_pred,seq_gold,sent):
-        sent = sent[1:]
-        seq_pred = np.asarray(seq_pred[1:-1],dtype=str)
-        seq_gold = np.asarray(seq_gold[1:],dtype=str)
-        #overall accuracy
-        acc_all = np.sum(seq_pred==seq_gold)/len(seq_gold)*100
-        #known accuracy
+    def count_acc(self,seq_pred,seq_gold,sent):
         mask = np.asarray([i in self.tag_dict.keys() for i in sent],dtype=bool)
-        acc_know = np.sum(seq_pred[mask] == seq_gold[mask])/np.sum(mask)*100
-        acc_unk = np.sum(seq_pred[~mask] == seq_gold[~mask])/np.sum(~mask)*100 if np.sum(~mask) !=0 else 0
+        know_correct = np.sum(seq_pred[mask]==seq_gold[mask])
+        unk_correct = np.sum(seq_pred[~mask]==seq_gold[~mask])
+        know_all = np.sum(mask)
+        unk_all = np.sum(~mask)
+#        acc_unk = np.sum(seq_pred[~mask] == seq_gold[~mask])/np.sum(~mask)*100 if np.sum(~mask) !=0 else 0
+#        print("Tagging accuracy (Viterbi decoding): {0:2.2f}%\t(known: {1:2.2f}%  novel: {2:2.2f}%)".format(acc_all,acc_know,acc_unk))
+        return know_correct,unk_correct,know_all,unk_all
+
+    def eval_acc(self,seqs_pred,seqs_gold,sents):
+        kcc,unkcc,kaa,unkaa = 0,0,0,0
+        for i in range(len(seqs_gold)):
+            seq_pred,seq_gold,sent = seqs_pred[i],seqs_gold[i],sents[i]
+            seq_pred = np.asarray(seq_pred[1:-1],dtype=str)
+            seq_gold = np.asarray(seq_gold[1:],dtype=str)
+            kc,unkc,ka,unka = self.count_acc(seq_pred,seq_gold,sent[1:])
+            kcc+=kc; unkcc+=unkc; kaa+=ka; unkaa+=unka;
+        acc_all = (kcc+unkcc)/(kaa+unkaa)*100 if kaa+unkaa != 0 else 0
+        acc_know = kcc/kaa*100 if kaa != 0 else 0
+        acc_unk = unkcc/unkaa*100 if unkaa != 0 else 0
         print("Tagging accuracy (Viterbi decoding): {0:2.2f}%\t(known: {1:2.2f}%  novel: {2:2.2f}%)".format(acc_all,acc_know,acc_unk))
         return
 
@@ -144,13 +176,15 @@ def main():
     args = get_args()
     filetrn,filetst = args.filetrn,args.filetst
     ichmm = HMM()
+    ichmm.set_lambda(1,0)
     ichmm.count_estimate(filetrn)
-    sents,seqs = readsents(filetst)
+    sents,seqs_gold = readsents(filetst)
+    seqs_pred = []
     for i in range(len(sents)):
-        sent,tag = sents[i],seqs[i]
+        sent = sents[i]
         pred = ichmm.viterbi_decode(sent)
-        ichmm.eval_acc(pred,tag,sent)
-#    print(testsents)
+        seqs_pred.append(pred)
+    ichmm.eval_acc(seqs_pred,seqs_gold,sents)
 
 if __name__ == "__main__":
     main()
