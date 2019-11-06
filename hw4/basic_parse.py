@@ -70,21 +70,21 @@ def main():
                     ruleProbs,tw,backmap = {},{},{}
                     # loop possible parse positions bw. i+1 and j-1
                     for k in range(i+1,j):
-                        ikcell,kjcell = table[i][k],table[k][j]
-                        for key in grammar.keys():
-                            nT1,nT2 = key[0],key[1]
-                            if nT1 is in ikcell.ruleProbs.keys() and nT2 is in kjcell.ruleProbs.keys():
-                                p = rule[0]+ikcell.ruleProbs[nT1]+kjcell.ruleProbs[nT2]
-                                newTw = rule[0]+ikcell.tws[nT1]+kjcell.tws[nT2]
-                                if rule[2] in ruleProbs.keys():
-                                    tw[rule[1]] = logsumexp([tw[rule[1]],newTw])
-                                    if ruleProbs[rule[1]] < p:
-                                        ruleProbs[rule[1]] = p
-                                        backmap[rule[1]] = backNode(k,nT1,nT2)
-                                else:
-                                    ruleProbs[rule[1]] = p
-                                    tw[rule[1]] = newTw
-                                    backmap[rule[1]] = backNode(k,nT1,nT2)
+                            for nT1 in table[i][k].ruleProbs.keys():
+                                for nT2 in table[k][j].ruleProbs.keys():
+                                    if (nT1,nT2) in grammar.keys():
+                                        for rule in grammar[(nT1,nT2)]:
+                                            p = rule[0]+table[i][k].ruleProbs[nT1]+table[k][j].ruleProbs[nT2]
+                                            newTw = rule[0]+table[i][k].tws[nT1]+table[k][j].tws[nT2]
+                                            if rule[1] in ruleProbs.keys():
+                                                tw[rule[1]] = logsumexp([tw[rule[1]],newTw])
+                                                if ruleProbs[rule[1]] < p:
+                                                    ruleProbs[rule[1]] = p
+                                                    backmap[rule[1]] = backNode(k,nT1,nT2)
+                                            else:
+                                                ruleProbs[rule[1]] = p
+                                                tw[rule[1]] = newTw
+                                                backmap[rule[1]] = backNode(k,nT1,nT2)
                     best_total = np.max(list(tw.values())) if len(tw) != 0 else None
                     table[i][j] = cell(ruleProbs,tw,best_total)
                     back[i][j] = backmap

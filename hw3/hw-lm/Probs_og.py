@@ -19,10 +19,6 @@ import sys
 from pathlib import Path
 from typing import Any, Counter, Dict, List, Optional, Set, Tuple, Union
 
-#myimport
-import numpy as np
-import random
-
 log = logging.getLogger(Path(__file__).stem)  # Basically the only okay global variable.
 
 Zerogram = Tuple[()]
@@ -275,21 +271,13 @@ class BackoffAddLambdaLanguageModel(LanguageModel):
 
     def prob(self, x: str, y: str, z: str) -> float:
         # TODO: Reimplement me!
-        #The trigram should backoff to bigram, bigram to unigram
-        #unigram to uniform
-        assert self.vocab is not None
-        x = self.replace_missing(x)
-        y = self.replace_missing(y)
-        z = self.replace_missing(z)
-        uni=(self.tokens[z,]+self.lambda_)/(self.tokens[()]+self.lambda_*self.vocab_size)
-        bi=(self.tokens[y,z]+self.lambda_*self.vocab_size*uni)/(self.tokens[y,]+self.lambda_*self.vocab_size)
-        tri=(self.tokens[x,y,z]+self.lambda_*self.vocab_size*bi)/(self.tokens[x,y]+self.lambda_*self.vocab_size)
-        return tri
+        return super().prob(x, y, z)
 
 
 class LogLinearLanguageModel(LanguageModel):
     def __init__(self, c: float, lexicon: Path) -> None:
         super().__init__()
+
         if c < 0:
             log.error(f"C value was {c}")
             raise ValueError("You must include a non-negative c value in smoother name")
@@ -320,53 +308,13 @@ class LogLinearLanguageModel(LanguageModel):
         assert self.vocab is not None
         if token not in self.vocab:
             token = OOV
-        #Original
         if token not in self.vectors:
-            token = OOL
-        #modified to treat OOV as OOL too
-        if token == OOV:
             token = OOL
         return token
 
     def prob(self, x: str, y: str, z: str) -> float:
         # TODO: Reimplement me!
-        assert self.vocab is not None
-        x=self.replace_missing(x)
-        y=self.replace_missing(y)
-        z=self.replace_missing(z)
-
-        assert self.vectors is not None
-        x = np.asarray(self.vectors[x],dtype="float").reshape((-1,1))
-        y = np.asarray(self.vectors[y],dtype="float").reshape((-1,1))
-        z = np.asarray(self.vectors[z],dtype="float").reshape((-1,1))
-        numer = self.calNumer(x,y,z)
-        denom = self.calDenom(x,y)
-        triprob=float(numer/np.sum(denom))
-        return triprob
-
-    def calNumer(self, x: np.ndarray,y: np.ndarray, z: np.ndarray) -> np.ndarray:
-        x = x.T if x.shape[1] != 1 else x
-        y = y.T if y.shape[1] != 1 else y
-        z = z.T if z.shape[1] != 1 else z
-        assert self.X is not None
-        assert self.Y is not None
-        X = np.asarray(self.X,dtype="float")
-        Y = np.asarray(self.Y,dtype="float")
-        numer=np.exp(np.dot(np.dot(x.T,X),z)+np.dot(np.dot(y.T,Y),z))
-        return numer
-
-    def calDenom(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
-        #a handy function to calculate the normalization constant
-        #for the trigram conditional probability
-        x = x.T if x.shape[1] != 1 else x
-        y = y.T if y.shape[1] != 1 else y
-        evoc = np.asarray([self.vectors[self.replace_missing(i)] for i in self.vocab],dtype="float")
-        assert self.X is not None
-        assert self.Y is not None
-        X = np.asarray(self.X,dtype="float")
-        Y = np.asarray(self.Y,dtype="float")
-        denom=np.exp(np.dot(np.dot(x.T,X),evoc.T)+np.dot(np.dot(y.T,Y),evoc.T)) #shape is 1-by-V
-        return denom
+        return super().prob(x, y, z)
 
     def train(self, corpus: Path) -> List[str]:
         """Read the training corpus and collect any information that will be needed
@@ -382,10 +330,11 @@ class LogLinearLanguageModel(LanguageModel):
         # Initialize parameters
         self.X = [[0.0 for _ in range(self.dim)] for _ in range(self.dim)]
         self.Y = [[0.0 for _ in range(self.dim)] for _ in range(self.dim)]
+
         # Optimization hyperparameters
-        gamma0 = 0.01  # initial learning rate, used to compute actual learning rate
+        gamma0 = 0.1  # initial learning rate, used to compute actual learning rate
         epochs = 10  # number of passes
-        t = 0 # number of updates in total, my
+
         self.N = len(tokens_list) - 2  # number of training instances
         # ******** COMMENT *********
         # In log-linear model, you will have to do some additional computation at
@@ -398,73 +347,8 @@ class LogLinearLanguageModel(LanguageModel):
         # Note2: You can use self.show_progress() to log progress.
         #
         # **************************
-        print("Training from corpus",corpus.name)
-        print("Vocabulary size is {0} types including OOV and EOS".format(self.vocab_size))
-        for ep in range(0,epochs):
-            objective = 0.0
-            for i in range(2,len(tokens_list)):
-                print("i is {0}".format(i))
-                xtk,ytk,ztk = tokens_list[i-2],tokens_list[i-1],tokens_list[i]
-                x = np.asarray(self.vectors[xtk],dtype="float").reshape((-1,1))
-                y = np.asarray(self.vectors[ytk],dtype="float").reshape((-1,1))
-                z = np.asarray(self.vectors[ztk],dtype="float").reshape((-1,1))
 
-                #log.info("Start optimizing.")
-                gamma = gamma0/(1+gamma0*2*self.c/self.N*t)
-                constant = np.sum(self.calDenom(x,y))
-                #for X
-                s1 = np.multiply(x,z.T) #broadcast
-                s1 = np.dot(x,z.T)
-                sum_zi = np.zeros(z.T.shape) #1-by-m
-                for zi in self.vocab:
-                    zi = self.vectors[self.replace_missing(zi)]
-                    zi = np.asarray(zi,dtype="float").reshape((1,-1))
-                    p = float(self.calNumer(x,y,zi)/constant)
-                    sum_zi = np.add(sum_zi,p*zi)
-
-#                foo = np.asarray([(float(self.calNumer(x,y,np.asarray(self.vectors[self.replace_missing(zi)],dtype="float").reshape((-1,1)))/constant)*z.T).squeeze().tolist() for zi in self.vocab]) #foo is p*zi, which is V-by-m
-#                foo = np.sum(foo,axis=0,keepdims=True) # 1-by-m
-#                print(foo)
-#                input()
-                s2 = np.multiply(x,sum_zi) #broadcast, to get j-by-m
-                s3 = 2*self.c/self.N*np.asarray(self.X)
-                dX = s1-s2-s3 #j-by-m
-                #for Y
-                s1 = np.multiply(y,z.T) #broadcast
-                s2 = np.multiply(y,sum_zi) #broadcast, to get j-by-m
-                s3 = 2*self.c/self.N*np.asarray(self.Y)
-                dY = s1-s2-s3 #j-by-m
-                #finite-difference check
-#                a,b = np.random.randint(0,self.dim),np.random.randint(0,self.dim)
-#                wsum = np.sum(np.asarray(self.X)**2+np.asarray(self.Y)**2)
-#                obj = np.log(self.prob(xtk,ytk,ztk)-self.c/self.N*wsum)
-#                X_nw = np.asarray(self.X)
-#                X_nw[a][b] = X_nw[a][b]+1e-6
-#                Y_nw = np.asarray(self.Y)
-#                self.X = X_nw.tolist()
-#                wsum = np.sum(X_nw**2+Y_nw**2)
-#                lhs = np.log(self.prob(xtk,ytk,ztk)-self.c/self.N*wsum)
-#                rhs = obj+1e-6*dX[a][b]
-#                print(abs(lhs-rhs))
-#                input()
-                X_nw = np.asarray(self.X)+gamma*dX
-                Y_nw = np.asarray(self.Y)+gamma*dY
-                self.X = X_nw.tolist()
-                self.Y = Y_nw.tolist()
-#                wsum = np.sum(X_nw**2+Y_nw**2)
-#                objective+=np.log(self.prob(xtk,ytk,ztk))-self.c/self.N*wsum
-                t+=1
-                self.show_progress()
-#               wsum = np.sum(self.x**2+self.y**2)
-#               objective+=np.log(self.prob(xtk,ytk,ztk))-self.c/self.n*wsum 
-
-            wsum = np.sum(np.asarray(self.X)**2+np.asarray(self.Y)**2)
-            for i in range(2,len(tokens_list)):
-                xtk,ytk,ztk = tokens_list[i-2],tokens_list[i-1],tokens_list[i]
-                objective+=np.log(self.prob(xtk,ytk,ztk))
-            objective = 1/self.N*objective-self.c/self.N*wsum
-            print("epoch {0}: F={1:.5f}".format(ep,objective))
-        sys.stderr.write("\n")  # done printing progress dots "...."
+        log.info("Start optimizing.")
 
         #####################
         # TODO: Implement your SGD here
@@ -472,15 +356,4 @@ class LogLinearLanguageModel(LanguageModel):
 
         log.info(f"Finished training on {self.tokens[()]} tokens")
         return tokens_list  # Not really needed, except to obey typing.
-
-#ck = 0.0
-#x = next(iter(self.vocab))
-#y = next(iter(self.vocab))
-#for z in self.vocab:
-#    x = self.replace_missing(x)
-#    y = self.replace_missing(y)
-#    z = self.replace_missing(z)
-#    ck += self.prob(x,y,z)
-#print(ck)
-#input()
 
