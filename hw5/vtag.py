@@ -77,11 +77,13 @@ class HMM():
         viter = np.full((self.num_states,len(sentence)),np.NINF)
         viter[:,0] = 0 #prob of generating ### is 1, in log domain is 0
         pretags = ["###"]
+        all_states = list(self.tag2int.keys())
+        all_states.remove('###')
         #algo
         for i in range(1,len(sentence)):
             wi,wI = sentence[i], sentence[i-1]
             #consider all states if wi is unknown
-            curtags = self.tag_dict[wi] if wi in self.tag_dict.keys() else self.pinit.keys()
+            curtags = self.tag_dict[wi] if wi in self.tag_dict.keys() else all_states
             for tagi in curtags:
                 posi = self.tag2int[tagi]
                 for tagI in pretags:
@@ -106,13 +108,18 @@ class HMM():
             nT = bkptr[nT,i]
         return best_seq
 
-    def eval_acc(self,sq_pred,sq_gold):
-        sq_pred = np.asarray(sq_pred[1:-1],dtype=str)
-        sq_gold = np.asarray(sq_gold[1:],dtype=str)
-        denom = len(sq_gold)
-        numer = np.sum(sq_pred == sq_gold)
-        print("accuracy is {0:2.2f}".format(numer/denom*100))
-        return numer/denom
+    def eval_acc(self,seq_pred,seq_gold,sent):
+        sent = sent[1:]
+        seq_pred = np.asarray(seq_pred[1:-1],dtype=str)
+        seq_gold = np.asarray(seq_gold[1:],dtype=str)
+        #overall accuracy
+        acc_all = np.sum(seq_pred==seq_gold)/len(seq_gold)*100
+        #known accuracy
+        mask = np.asarray([i in self.tag_dict.keys() for i in sent],dtype=bool)
+        acc_know = np.sum(seq_pred[mask] == seq_gold[mask])/np.sum(mask)*100
+        acc_unk = np.sum(seq_pred[~mask] == seq_gold[~mask])/np.sum(~mask)*100 if np.sum(~mask) !=0 else 0
+        print("Tagging accuracy (Viterbi decoding): {0:2.2f}%\t(known: {1:2.2f}%  novel: {2:2.2f}%)".format(acc_all,acc_know,acc_unk))
+        return
 
 def readsents(test_file):
     #assume first line is "###"
@@ -142,7 +149,7 @@ def main():
     for i in range(len(sents)):
         sent,tag = sents[i],seqs[i]
         pred = ichmm.viterbi_decode(sent)
-        ichmm.eval_acc(pred,tag)
+        ichmm.eval_acc(pred,tag,sent)
 #    print(testsents)
 
 if __name__ == "__main__":
